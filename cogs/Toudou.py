@@ -17,13 +17,11 @@ class SimpleView(discord.ui.View):
 async def help_todo(interaction):
         help_embed = discord.Embed(title='Todo Commands Help', color=discord.Colour.blurple())
 
-        help_embed.add_field(name='.todo [optional title] [optional member]', value='Creates a new todo list', inline=False)
-        help_embed.add_field(name='.add <task>', value='Adds a task to the todo list', inline=False)
-        help_embed.add_field(name='.rm <task_number>', value='Removes a task from the todo list', inline=False)
-        help_embed.add_field(name='.e <task_number> <new_task>', value='Edits a task in the todo list', inline=False)
-        help_embed.add_field(name='.uncheck <task_number>', value='Marks a completed task as incomplete', inline=False)
-        help_embed.add_field(name='.complete <task_number>', value='Marks a task as completed', inline=False)
-        help_embed.add_field(name='.help_todo', value='Displays this help message', inline=False)
+        help_embed.add_field(name='.todo [optional title]', value='Creates a new todo list', inline=False)
+        help_embed.add_field(name='add <task>', value='Adds a task to the todo list', inline=False)
+        help_embed.add_field(name='rm <task_number>', value='Removes a task from the todo list', inline=False)
+        help_embed.add_field(name='e <task_number> <new_task>', value='Edits a task in the todo list', inline=False)
+        help_embed.add_field(name='uncheck <task_number>', value='Marks a completed task as incomplete', inline=False)
 
         await interaction.response.send_message(embed=help_embed)
     
