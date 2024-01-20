@@ -5,28 +5,36 @@ from datetime import datetime
 class SimpleView(discord.ui.View):
     def __init__(self):
         super().__init__()
+        self.help_message_visible = False
 
+    # Notification button
     @discord.ui.button(label="🔔",style=discord.ButtonStyle.success)
-    async def notify(self,interaction:discord.Interaction, button:discord.ui.Button):
-        await interaction.response.send_message("")
+    async def notifications(self,interaction:discord.Interaction, button:discord.ui.Button):
+        await interaction.response.send_message(f"Notifications enabled for ")
     
+    # Help Button
     @discord.ui.button(label="Help",style=discord.ButtonStyle.success)
     async def Help(self,interaction:discord.Interaction,button:discord.ui.Button):
-        await help_todo(interaction)
+        await self.help_todo(interaction)
 
-async def help_todo(interaction):
-        help_embed = discord.Embed(title='Todo Commands Help', color=discord.Colour.blurple())
+    async def help_todo(self, interaction):
+            
+            help_embed = discord.Embed(title='Todo Commands Help', color=discord.Colour.blurple())
 
-        help_embed.add_field(name='.todo [optional title]', value='Creates a new todo list', inline=False)
-        help_embed.add_field(name='add <task>', value='Adds a task to the todo list', inline=False)
-        help_embed.add_field(name='rm <task_number>', value='Removes a task from the todo list', inline=False)
-        help_embed.add_field(name='e <task_number> <new_task>', value='Edits a task in the todo list', inline=False)
-        help_embed.add_field(name='uncheck <task_number>', value='Marks a completed task as incomplete', inline=False)
+            help_embed.add_field(name='.todo [optional title]', value='Creates a new todo list', inline=False)
+            help_embed.add_field(name='add <task>', value='Adds a task to the todo list', inline=False)
+            help_embed.add_field(name='<task_number>', value='Marks a task as complete', inline=False)
+            help_embed.add_field(name='rm <task_number>', value='Removes a task from the todo list', inline=False)
+            help_embed.add_field(name='e <task_number> <new_task>', value='Edits a task in the todo list', inline=False)
+            help_embed.add_field(name='uncheck <task_number>', value='Marks a completed task as incomplete', inline=False)
+            
+            self.help_message_visible = True
 
-        await interaction.response.send_message(embed=help_embed)
+            await interaction.response.send_message(embed=help_embed)
     
 
 class todo(commands.Cog):
+
     def __init__(self, bot):
         self.bot = bot
         self.todo_list_active = False
@@ -34,6 +42,7 @@ class todo(commands.Cog):
         self.num_complete = 0 
         self.name = ''
         self.pfp = 0
+        self.view = SimpleView()
         
     
     @commands.Cog.listener()
@@ -44,34 +53,41 @@ class todo(commands.Cog):
     async def todo(self, ctx, *args, member: discord.Member = None):
         self.todo_list_active = True
 
-        view = SimpleView()
-
         if member is None:
             member = ctx.author
-
+        
+        # sets the list title
         if len(args) == 0: 
             list_title = "TODO List"
         else:
             list_title = ' '.join(args)
-            
-        self.name = member.display_name
+        
+        self.name = member.display_name 
         self.pfp = member.display_avatar
-
         self.tasks = {}  # Reset tasks when a new todo list is created
 
-        todo = discord.Embed(title= f"{list_title}", description="Add tasks using `.add <task>`", color=discord.Colour.blurple(), timestamp= datetime.now())
+        # creates the embed with time and author 
+        todo = discord.Embed(title= f"{list_title}", description="Add tasks using `add <task>`", color=discord.Colour.blurple(), timestamp= datetime.now())
         todo.set_author(name=f"{self.name}", icon_url=f"{self.pfp}")
 
-        await ctx.send(embed=todo, view = view)
+        await ctx.send(embed=todo, view = self.view)
         
     
     @commands.Cog.listener()
     async def on_message(self, message):
-
+        print(self.view.help_message_visible)
+        if self.view.help_message_visible == True and message.author != self.bot.user: 
+            # Fetch the original todo message
+            print("help message = True")
+            async for curr_message in message.channel.history():
+                if curr_message.author == self.bot.user and curr_message.embeds:
+                    await curr_message.delete()
+                    self.view.help_message_visible = False
+                    break
+            
         if message.author == self.bot.user:
             return
-        # print(f"message contents: {message.content}")
-        # print(f"tasks: {len(self.tasks)}")
+
         if self.todo_list_active and (message.content.startswith('add ') or message.content.startswith('+ ')):
             task = message.content.split(' ')[1:]
             task = ' '.join(task)
