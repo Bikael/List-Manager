@@ -60,6 +60,7 @@ class todo(commands.Cog):
         self.name = ''
         self.pfp = 0
         self.list_title = 'TODO List'
+        self.channel = 0
         self.view = SimpleView()
         
     
@@ -70,6 +71,7 @@ class todo(commands.Cog):
     @commands.command(name='todo', help='Creates a todo list')
     async def todo(self, ctx, *args, member: discord.Member = None):
         self.todo_list_active = True
+        self.channel = ctx.channel.id
 
         if member is None:
             member = ctx.author
@@ -86,14 +88,15 @@ class todo(commands.Cog):
 
         await ctx.send(embed=todo, view = self.view)
 
-        
+      
     
     @commands.Cog.listener()
     async def on_message(self, message):
-        if self.view.help_message_visible == True:
+        
+        if self.view.help_message_visible == True :
+            
             # Delete the help message if it's visible
-            if message.author != self.bot.user: 
-                
+            if message.author != self.bot.user and self.channel == message.channel.id: 
                 # Fetch the original todo message
                 async for curr_message in message.channel.history():
                     if curr_message.author == self.bot.user and curr_message.embeds:
@@ -226,11 +229,15 @@ class todo(commands.Cog):
                 self.task_list[task] = 1
                 self.num_complete +=1
                 await self.update_todo_embed(message.channel)
+            
+            # quit the todo list
+            elif message.content.startswith('quit'):
+                self.todo_list_active = False
+                await message.delete()
 
-        if message.author != self.bot.user:
+        # Deletes all messages that are sent by the user in the channel with the todo list
+        if message.author != self.bot.user and self.channel == message.channel.id and self.todo_list_active:
             await message.delete()
-        
-
 
     async def update_todo_embed(self, channel):
         task_list = []
@@ -267,6 +274,7 @@ class todo(commands.Cog):
                 await message.edit(embed=todo)
                 break
 
+    
     
 
 async def setup(bot):
