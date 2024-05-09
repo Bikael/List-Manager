@@ -8,25 +8,12 @@ class SimpleView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.help_message_visible = False
-
-    # Notification button
-    @discord.ui.button(label="🔕",style=discord.ButtonStyle.success)
-    async def notifications(self, interaction:discord.Interaction, button:discord.ui.Button):
-        print(button.label)
-        if button.label == "🔕":
-            button.label = "🔔"
-        else:
-            button.label = "🔕"
-
-        await interaction.response.send_message("Notifications enabled")
     
     # Help Button
     @discord.ui.button(label="Help")
     async def Help(self, interaction:discord.Interaction, button:discord.ui.Button):
         
-        print(button.disabled)
         await self.help_todo(interaction)
-
         button.disabled = True
         await interaction.response.edit_message(view=self)
 
@@ -61,21 +48,27 @@ class todo(commands.Cog):
         self.name = ''
         self.pfp = 0
         self.list_title = 'TODO List'
-        self.channel = 0
+        self.active_channel_id = 0
+        self.active_channel = 0
         self.storage_channel = 0
         self.id_dict = {}
         self.master_id = 0
         self.view = SimpleView()
-        self.valid_commands = ['.todo','.clearchannel','.delete']
+        self.valid_commands = ['.todo','.clearchannel','.delete','.show','.setstorage']
     
     @commands.Cog.listener()
     async def on_ready(self):
-        print("the bot is ready")
+        print("The bot is ready")
 
     @commands.command(name='todo', help='Creates a todo list')
     async def todo(self, ctx, *args, member: discord.Member = None):
         self.todo_list_active = True
-        self.channel = ctx.channel.id
+        self.active_channel_id = ctx.channel.id
+        self.active_channel = self.bot.get_channel(self.active_channel_id)
+        if self.storage_channel == 0:
+            self.storage_channel = self.active_channel
+            print(self.storage_channel)
+        
         await ctx.message.delete()
 
         if member is None:
@@ -91,48 +84,35 @@ class todo(commands.Cog):
         # Sets the author and authors pfp
         self.name = member.display_name 
         self.pfp = member.display_avatar
-
         self.task_dict = {}  # Reset tasks when a new todo list is created
         
-        # Retrieves the first message in the channel
-        messages = [message async for message in ctx.channel.history(limit=1, oldest_first=True)]
-        print(messages)
-
-        # Creates a first message if it does not exists, then sets master id to first message id
-        if len(messages) == 0:
-            await ctx.send(self.id_dict)
-            messages = [message async for message in ctx.channel.history(limit=1, oldest_first=True)]
-            self.master_id = messages[0].id
-        else:
-            self.master_id = messages[0].id
-            print(self.master_id)
-
-        # Convert String from first message to a dictionary
-        self.id_dict = ast.literal_eval(messages[0].content)
-        print(self.list_title)
+        await self.load_dict(ctx)
         
         # Check if the title is in the first message dictionary
         if self.list_title in self.id_dict.keys():
             # Gets the message id of the list with the desired title
-            message = await ctx.channel.fetch_message(self.id_dict[self.list_title])
-            print(message.id)
-            load_embed(self, message)
+            message = await self.storage_channel.fetch_message(self.id_dict[self.list_title])
+            await self.load_embed(message)
             del self.id_dict[self.list_title]
             todo = message.embeds[0]
-            print(todo)
             await message.delete()
-            message = await ctx.send(embed=todo, view=self.view)
+            message = await self.storage_channel.send(embed=todo, view = self.view)
+            if self.storage_channel != self.active_channel:
+                await ctx.send(embed=todo, view = self.view)
 
         else:
             # creates the embed with time and author 
             todo = discord.Embed(title= f"{self.list_title}", description="Add tasks using `add <task>`", color=discord.Colour.blurple(), timestamp= datetime.now())
             todo.set_author(name=f"{self.name}", icon_url=f"{self.pfp}")
-            message = await ctx.send(embed=todo, view = self.view)
+
+            message = await self.storage_channel.send(embed=todo, view = self.view)
+            if self.storage_channel != self.active_channel:
+                await ctx.send(embed=todo, view = self.view)
 
         self.id_dict[self.list_title] = message.id
         print(self.id_dict)
 
-        message = await ctx.channel.fetch_message(self.master_id)
+        message = await self.storage_channel.fetch_message(self.master_id)
         print(message)
 
         await message.edit(content=self.id_dict)
@@ -142,45 +122,104 @@ class todo(commands.Cog):
     @commands.command(name='delete', help='Deletes a list by name')
     async def delete(self,ctx,*args):
 
-        load_dict(self,ctx)
+        await self.load_dict(ctx)
         list_title = ' '.join(args)
         await ctx.message.delete()
-        print(self.id_dict)
-        print(list_title in self.id_dict)
         if list_title in self.id_dict:
-            message = await ctx.channel.fetch_message(self.id_dict[list_title])
+            message = await self.storage_channel.fetch_message(self.id_dict[list_title])
             await message.delete()
             del self.id_dict[list_title]
         
         self.id_dict[self.list_title] = message.id
         print(self.id_dict)
 
-        message = await ctx.channel.fetch_message(self.master_id)
+        message = await self.storage_channel.fetch_message(self.master_id)
         print(message)
 
         await message.edit(content=self.id_dict)
 
-    @commands.command(name='clearchannel', help='Clears all messages from channel')
-    async def clear_channel(self,ctx):
-        channel = ctx.channel
-        self.id_dict = {}
-        await channel.purge()
+    @commands.command(name='clearchannel', help='Clears all messages from channel (with confirmation)')
+    async def clear_channel(self, ctx):
+        # Ask for confirmation
+        await ctx.send("Are you sure you want to clear all messages from this channel? Type `yes` to confirm.")
+
+        def check(message):
+            return message.author == ctx.author and message.channel == ctx.channel and message.content.lower() == 'yes'  
+        await self.bot.wait_for('message', check=check)
+        # If user confirms, proceed with clearing the channel
+        await ctx.channel.purge()
+        
+
 
     @commands.command(name='setstorage', help='Sets a channel to store all the embeds')
-    async def setstorage(self,ctx,*args, category = None):
+    async def setstorage(self,ctx,*args):
         guild = ctx.guild
-        channel_name = ' '.join(args)
+        channel_name = '-'.join(args)
+        await ctx.message.delete()
         channel = discord.utils.get(guild.channels, name=channel_name)
         if channel:
             self.storage_channel = channel
         else:
-            category = discord.utils.get(guild.categories, name=category)
-            await guild.create_text_channel(channel_name, category=category)
-        
+            await guild.create_text_channel(channel_name)
+            channel = discord.utils.get(guild.channels, name=channel_name)
+            self.storage_channel = channel
 
+        print(f"storage has been set to: {channel_name}")
 
-        # self.storage_channel = discord.utils.get(ctx.text_channels, name=list_title)
+    @commands.command(name='show', help='displays all lists in the storage channel')
+    async def show(self, ctx):
+
+        # Get the keys of the dictionary and sort them alphabetically
+        sorted_keys = sorted(self.id_dict.keys())
+
+        # Create a formatted string with the sorted keys
+        keys_list = "\n".join(sorted_keys)
+
+        # Send the sorted keys as a message
+        await ctx.send(f"**Keys of the dictionary (in alphabetical order):**\n```{keys_list}```")
+
         
+    async def load_embed(self, message):
+        pattern = r'^.*?\[(.*?)\]\s*'
+        task_dict = {}
+        todos = []
+        num_complete = 0
+        embed = message.embeds[0]
+        print(embed.fields)
+        if embed.fields: 
+            fields = embed.fields[0].value.strip("`")
+            print(fields)
+            todos = fields.split("\n")
+            print(todos)   
+        for todo in todos:
+            parsed_todo = re.sub(pattern, r'\1', todo)
+            print(parsed_todo)
+            if "✓" in todo:
+                task_dict[parsed_todo] = 1
+                num_complete+=1
+            else:
+                task_dict[parsed_todo] = 0
+        print(task_dict)
+        self.task_dict = task_dict
+        self.num_complete = num_complete
+
+    async def load_dict(self, ctx):
+        # Retrieves the first message in the channel
+        messages = [message async for message in self.storage_channel.history(limit=1, oldest_first=True)]
+        print(messages)
+
+        # Creates a first message if it does not exists, then sets master id to first message id
+        if len(messages) == 0:
+            await self.storage_channel.send(self.id_dict)
+            messages = [message async for message in self.storage_channel.history(limit=1, oldest_first=True)]
+            self.master_id = messages[0].id
+        else:
+            self.master_id = messages[0].id
+            print(self.master_id)
+
+        # Convert String from first message to a dictionary
+        self.id_dict = ast.literal_eval(messages[0].content)
+        print(self.list_title)  
         
 
     @commands.Cog.listener()
@@ -189,7 +228,7 @@ class todo(commands.Cog):
         if self.view.help_message_visible == True :
             
             # Delete the help message if it's visible
-            if message.author != self.bot.user and self.channel == message.channel.id: 
+            if message.author != self.bot.user and self.active_channel == message.channel.id: 
                 # Fetch the original todo message
                 async for curr_message in message.channel.history():
                     if curr_message.author == self.bot.user and curr_message.embeds:
@@ -233,7 +272,6 @@ class todo(commands.Cog):
                     keys_list = list(self.task_dict.keys())
                     print("before for ")
                     for task_num in task_nums:
-                        
                         task_num = int(task_num)
                         task = keys_list[task_num - 1]
                         if self.task_dict[task] == 1:
@@ -331,7 +369,7 @@ class todo(commands.Cog):
                 await message.delete()
 
         # Deletes all non command messages that are sent by the user in the channel with the todo list
-        if message.author != self.bot.user and self.channel == message.channel.id and self.todo_list_active:
+        if message.author != self.bot.user and self.active_channel_id == message.channel.id and self.todo_list_active:
             if not any(message.content.startswith(command) for command in self.valid_commands):
                 print("message deleted")
                 await message.delete()
@@ -365,53 +403,18 @@ class todo(commands.Cog):
         # Fetch the original todo message
         async for message in channel.history():
             if message.author == self.bot.user and message.embeds:
-                original_embed = message.embeds[0]
-
                 # Edit the original message with the updated embed
                 await message.edit(embed=todo)
                 break
-
-async def load_embed(self, message):
-    pattern = r'^.*?\[(.*?)\]\s*'
-    task_dict = {}
-    todos = []
-    num_complete = 0
-    embed = message.embeds[0]
-    print(embed.fields)
-    if embed.fields: 
-        fields = embed.fields[0].value.strip("`")
-        print(fields)
-        todos = fields.split("\n")
-        print(todos)   
-    for todo in todos:
-        parsed_todo = re.sub(pattern, r'\1', todo)
-        print(parsed_todo)
-        if "✓" in todo:
-            task_dict[parsed_todo] = 1
-            num_complete+=1
-        else:
-            task_dict[parsed_todo] = 0
-    print(task_dict)
-    self.task_dict = task_dict
-    self.num_complete = num_complete
-
-async def load_dict(self, ctx):
-    # Retrieves the first message in the channel
-    messages = [message async for message in ctx.channel.history(limit=1, oldest_first=True)]
-    print(messages)
-
-    # Creates a first message if it does not exists, then sets master id to first message id
-    if len(messages) == 0:
-        await ctx.send(self.id_dict)
-        messages = [message async for message in ctx.channel.history(limit=1, oldest_first=True)]
-        self.master_id = messages[0].id
-    else:
-        self.master_id = messages[0].id
-        print(self.master_id)
-
-    # Convert String from first message to a dictionary
-    self.id_dict = ast.literal_eval(messages[0].content)
-    print(self.list_title)
+            
+        if channel != self.storage_channel:
+            # Fetch the original todo message
+            async for message in self.storage_channel.history():
+                if message.author == self.bot.user and message.embeds:
+                    # Edit the original message with the updated embed
+                    await message.edit(embed=todo)
+                    break
+        
 
 
 async def setup(bot):
