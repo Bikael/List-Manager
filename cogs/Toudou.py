@@ -148,10 +148,12 @@ class todo(commands.Cog):
         await self.bot.wait_for('message', check=check)
         # If user confirms, proceed with clearing the channel
         await ctx.channel.purge()
+        if ctx.channel == self.storage_channel:
+            self.id_dict = {}
         
 
 
-    @commands.command(name='setstorage', help='Sets a channel to store all the embeds')
+    @commands.command(name='storage', help='Sets a channel to store all the embeds')
     async def setstorage(self,ctx,*args):
         guild = ctx.guild
         channel_name = '-'.join(args)
@@ -168,7 +170,7 @@ class todo(commands.Cog):
 
     @commands.command(name='show', help='displays all lists in the storage channel')
     async def show(self, ctx):
-
+        await self.load_dict(ctx)
         # Get the keys of the dictionary and sort them alphabetically
         sorted_keys = sorted(self.id_dict.keys())
 
